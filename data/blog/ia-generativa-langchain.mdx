@@ -1,0 +1,454 @@
+---
+title: 'IA Generativa: Construyendo una aplicación con GPT y LangChain'
+date: '2024-02-05'
+tags: ['ia', 'llm', 'gpt', 'langchain', 'inteligencia-artificial']
+draft: false
+summary: 'Aprende a construir aplicaciones inteligentes usando modelos de lenguaje grandes (LLMs) con LangChain. Tutorial práctico para crear tu primera app de IA generativa.'
+authors: ['default']
+---
+
+# IA Generativa: Construyendo con LLMs
+
+Los modelos de lenguaje grandes (LLMs) como GPT han revolucionado la forma en que interactuamos con la IA. En este artículo aprenderás a construir aplicaciones prácticas con estas tecnologías.
+
+## ¿Qué es LangChain?
+
+**LangChain** es un framework que facilita el desarrollo de aplicaciones con LLMs. Proporciona:
+
+- 🔗 **Chains**: Cadenas de llamadas a LLMs
+- 🧠 **Memory**: Gestión de contexto y conversaciones
+- 🔍 **Agents**: Capacidad de tomar decisiones y usar herramientas
+- 📚 **Document Loaders**: Integración con fuentes de datos
+- 🎯 **Retrieval**: Búsqueda y recuperación de información
+
+## Instalación y configuración
+
+```bash
+pip install langchain openai python-dotenv
+```
+
+Crea un archivo `.env`:
+```
+OPENAI_API_KEY=tu-api-key-aqui
+```
+
+## Caso 1: Chat simple con memoria
+
+```python
+from langchain.chat_models import ChatOpenAI
+from langchain.memory import ConversationBufferMemory
+from langchain.chains import ConversationChain
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Inicializar el modelo
+llm = ChatOpenAI(
+    temperature=0.7,
+    model_name="gpt-4",
+    openai_api_key=os.getenv("OPENAI_API_KEY")
+)
+
+# Configurar memoria
+memory = ConversationBufferMemory()
+
+# Crear cadena de conversación
+conversation = ConversationChain(
+    llm=llm,
+    memory=memory,
+    verbose=True
+)
+
+# Usar el chatbot
+response1 = conversation.predict(input="Hola, me llamo Rafael")
+print(response1)
+
+response2 = conversation.predict(input="¿Cuál es mi nombre?")
+print(response2)  # El modelo recordará tu nombre
+```
+
+## Caso 2: RAG (Retrieval Augmented Generation)
+
+Crea un sistema que responda preguntas basándose en tus documentos:
+
+```python
+from langchain.document_loaders import DirectoryLoader, TextLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.chains import RetrievalQA
+from langchain.chat_models import ChatOpenAI
+
+class DocumentQA:
+    """Sistema de preguntas y respuestas sobre documentos."""
+    
+    def __init__(self, docs_path: str):
+        self.docs_path = docs_path
+        self.vectorstore = None
+        self.qa_chain = None
+        
+    def load_documents(self):
+        """Carga documentos desde un directorio."""
+        loader = DirectoryLoader(
+            self.docs_path,
+            glob="**/*.txt",
+            loader_cls=TextLoader
+        )
+        documents = loader.load()
+        
+        # Dividir documentos en chunks
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200
+        )
+        splits = text_splitter.split_documents(documents)
+        
+        return splits
+    
+    def create_vectorstore(self, documents):
+        """Crea un vector store con los documentos."""
+        embeddings = OpenAIEmbeddings()
+        self.vectorstore = Chroma.from_documents(
+            documents=documents,
+            embedding=embeddings,
+            persist_directory="./chroma_db"
+        )
+        
+    def setup_qa_chain(self):
+        """Configura la cadena de QA."""
+        llm = ChatOpenAI(
+            temperature=0,
+            model_name="gpt-4"
+        )
+        
+        self.qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=self.vectorstore.as_retriever(
+                search_kwargs={"k": 3}
+            ),
+            return_source_documents=True
+        )
+    
+    def initialize(self):
+        """Inicializa el sistema completo."""
+        documents = self.load_documents()
+        self.create_vectorstore(documents)
+        self.setup_qa_chain()
+    
+    def ask(self, question: str):
+        """Hace una pregunta al sistema."""
+        result = self.qa_chain({"query": question})
+        
+        return {
+            "answer": result["result"],
+            "sources": [doc.page_content for doc in result["source_documents"]]
+        }
+
+# Uso
+doc_qa = DocumentQA("./docs")
+doc_qa.initialize()
+
+result = doc_qa.ask("¿Cuáles son las mejores prácticas de Azure?")
+print(f"Respuesta: {result['answer']}")
+print(f"\nFuentes consultadas: {len(result['sources'])}")
+```
+
+## Caso 3: Agente con herramientas
+
+Crea un agente que puede usar herramientas:
+
+```python
+from langchain.agents import Tool, AgentExecutor, create_react_agent
+from langchain.tools import DuckDuckGoSearchRun
+from langchain.chat_models import ChatOpenAI
+from langchain import hub
+import requests
+
+# Definir herramientas personalizadas
+def get_weather(location: str) -> str:
+    """Obtiene el clima de una ubicación."""
+    # API de ejemplo (reemplazar con API real)
+    return f"El clima en {location} es soleado, 25°C"
+
+def calculate(expression: str) -> str:
+    """Evalúa una expresión matemática."""
+    try:
+        result = eval(expression)
+        return f"El resultado es: {result}"
+    except Exception as e:
+        return f"Error al calcular: {str(e)}"
+
+# Crear herramientas
+search = DuckDuckGoSearchRun()
+
+tools = [
+    Tool(
+        name="Search",
+        func=search.run,
+        description="Busca información en internet. Úsala cuando necesites información actualizada."
+    ),
+    Tool(
+        name="Weather",
+        func=get_weather,
+        description="Obtiene información del clima. Input: nombre de la ciudad."
+    ),
+    Tool(
+        name="Calculator",
+        func=calculate,
+        description="Calcula expresiones matemáticas. Input: expresión matemática como string."
+    )
+]
+
+# Crear agente
+llm = ChatOpenAI(temperature=0, model_name="gpt-4")
+
+# Obtener prompt template
+prompt = hub.pull("hwchase17/react")
+
+# Crear agente
+agent = create_react_agent(llm, tools, prompt)
+
+# Crear ejecutor del agente
+agent_executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    verbose=True,
+    handle_parsing_errors=True
+)
+
+# Usar el agente
+response = agent_executor.invoke({
+    "input": "¿Cuál es el clima en Madrid y cuánto es 25 * 4?"
+})
+
+print(response["output"])
+```
+
+## Caso 4: Chatbot con FastAPI
+
+Crear una API para tu chatbot:
+
+```python
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from langchain.chat_models import ChatOpenAI
+from langchain.memory import ConversationBufferMemory
+from langchain.chains import ConversationChain
+from typing import Dict
+import uuid
+
+app = FastAPI(title="AI Chatbot API")
+
+# Almacenar sesiones en memoria (usar Redis en producción)
+sessions: Dict[str, ConversationChain] = {}
+
+class ChatRequest(BaseModel):
+    session_id: str = None
+    message: str
+
+class ChatResponse(BaseModel):
+    session_id: str
+    response: str
+
+def create_conversation():
+    """Crea una nueva conversación."""
+    llm = ChatOpenAI(temperature=0.7, model_name="gpt-4")
+    memory = ConversationBufferMemory()
+    return ConversationChain(llm=llm, memory=memory)
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
+    """Endpoint para chatear con el bot."""
+    
+    # Crear o recuperar sesión
+    session_id = request.session_id or str(uuid.uuid4())
+    
+    if session_id not in sessions:
+        sessions[session_id] = create_conversation()
+    
+    conversation = sessions[session_id]
+    
+    try:
+        # Generar respuesta
+        response = conversation.predict(input=request.message)
+        
+        return ChatResponse(
+            session_id=session_id,
+            response=response
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/session/{session_id}")
+async def delete_session(session_id: str):
+    """Elimina una sesión."""
+    if session_id in sessions:
+        del sessions[session_id]
+        return {"message": "Session deleted"}
+    raise HTTPException(status_code=404, detail="Session not found")
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "active_sessions": len(sessions)}
+```
+
+## Mejores prácticas
+
+### 1. Gestión de costos
+
+```python
+from langchain.callbacks import get_openai_callback
+
+with get_openai_callback() as cb:
+    result = qa_chain.run("¿Qué es Azure?")
+    print(f"Tokens totales: {cb.total_tokens}")
+    print(f"Costo: ${cb.total_cost}")
+```
+
+### 2. Caching
+
+```python
+from langchain.cache import InMemoryCache
+from langchain.globals import set_llm_cache
+
+# Configurar cache
+set_llm_cache(InMemoryCache())
+
+# Las llamadas idénticas usarán el cache
+llm = ChatOpenAI()
+result1 = llm.predict("Hola")
+result2 = llm.predict("Hola")  # Desde cache, sin costo
+```
+
+### 3. Streaming
+
+```python
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+
+llm = ChatOpenAI(
+    streaming=True,
+    callbacks=[StreamingStdOutCallbackHandler()]
+)
+
+# Las respuestas se mostrarán token por token
+response = llm.predict("Escribe un poema largo")
+```
+
+### 4. Error handling
+
+```python
+from langchain.chains import LLMChain
+from langchain.prompts import PromptTemplate
+import logging
+
+logger = logging.getLogger(__name__)
+
+def safe_llm_call(prompt: str, max_retries: int = 3):
+    """Llama al LLM con reintentos."""
+    llm = ChatOpenAI()
+    
+    for attempt in range(max_retries):
+        try:
+            return llm.predict(prompt)
+        except Exception as e:
+            logger.warning(f"Attempt {attempt + 1} failed: {e}")
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(2 ** attempt)  # Exponential backoff
+```
+
+### 5. Prompt Engineering
+
+```python
+from langchain.prompts import ChatPromptTemplate
+
+template = """
+Eres un experto en {domain}.
+
+Contexto: {context}
+
+Pregunta del usuario: {question}
+
+Proporciona una respuesta detallada, técnica y precisa.
+Si no estás seguro, di "No tengo suficiente información".
+
+Respuesta:
+"""
+
+prompt = ChatPromptTemplate.from_template(template)
+
+chain = LLMChain(llm=llm, prompt=prompt)
+
+result = chain.run(
+    domain="Azure",
+    context="Estamos diseñando una arquitectura data lake",
+    question="¿Qué servicios recomiendas?"
+)
+```
+
+## Consideraciones de seguridad
+
+### 1. Validación de entrada
+```python
+def validate_input(text: str) -> bool:
+    """Valida el input del usuario."""
+    if len(text) > 5000:
+        raise ValueError("Input demasiado largo")
+    
+    # Filtrar prompts maliciosos
+    forbidden_patterns = ["ignore previous", "system:", "prompt:"]
+    if any(pattern in text.lower() for pattern in forbidden_patterns):
+        raise ValueError("Input potencialmente malicioso")
+    
+    return True
+```
+
+### 2. Rate limiting
+```python
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+
+@app.post("/chat")
+@limiter.limit("10/minute")
+async def chat(request: ChatRequest):
+    # ...
+```
+
+### 3. Moderación de contenido
+```python
+from openai import OpenAI
+
+client = OpenAI()
+
+def moderate_content(text: str) -> bool:
+    """Modera el contenido usando OpenAI Moderation."""
+    response = client.moderations.create(input=text)
+    return not response.results[0].flagged
+```
+
+## Conclusión
+
+LangChain y los LLMs abren un mundo de posibilidades. Los casos de uso son infinitos:
+- Asistentes virtuales
+- Análisis de documentos
+- Generación de código
+- Resúmenes automáticos
+- Y mucho más
+
+En próximos artículos exploraremos:
+- Fine-tuning de modelos
+- Evaluación de sistemas LLM
+- Multi-modal AI
+- Despliegue en producción
+
+## Recursos
+
+- [LangChain Documentation](https://python.langchain.com/)
+- [OpenAI Cookbook](https://github.com/openai/openai-cookbook)
+- [Prompt Engineering Guide](https://www.promptingguide.ai/)
+
+¿Qué aplicaciones con IA generativa te gustaría construir? ¡Comparte tus ideas!

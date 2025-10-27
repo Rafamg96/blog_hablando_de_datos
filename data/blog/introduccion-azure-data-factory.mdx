@@ -1,0 +1,201 @@
+---
+title: 'Introducción a Azure Data Factory: Tu primer Pipeline de Datos'
+date: '2024-01-20'
+tags: ['azure', 'data-factory', 'etl', 'cloud']
+draft: false
+summary: 'Aprende a crear tu primer pipeline de datos con Azure Data Factory, uno de los servicios más potentes para orquestar flujos de datos en la nube.'
+authors: ['default']
+---
+
+# Introducción a Azure Data Factory
+
+Azure Data Factory (ADF) es el servicio de integración de datos de Microsoft Azure que permite crear, programar y orquestar flujos de trabajo de datos a escala empresarial.
+
+## ¿Qué es Azure Data Factory?
+
+ADF es un servicio de ETL (Extract, Transform, Load) basado en la nube que te permite:
+
+- **Ingerir datos** de múltiples fuentes
+- **Transformar datos** mediante flujos de datos
+- **Orquestar pipelines** complejos
+- **Monitorizar** la ejecución en tiempo real
+
+## Componentes principales
+
+### 1. Linked Services (Servicios vinculados)
+Definen la información de conexión a tus fuentes de datos:
+- Bases de datos (SQL Server, PostgreSQL, MySQL)
+- Almacenamiento (Azure Blob Storage, Data Lake)
+- APIs y servicios web
+- Servicios de terceros
+
+### 2. Datasets (Conjuntos de datos)
+Representan la estructura de los datos dentro de los servicios vinculados.
+
+### 3. Activities (Actividades)
+Las operaciones que realizas sobre los datos:
+- **Copy Activity**: copiar datos entre fuentes
+- **Data Flow**: transformaciones visuales
+- **Stored Procedure**: ejecutar procedimientos almacenados
+- **Custom Activity**: código personalizado
+
+### 4. Pipelines
+Agrupación lógica de actividades que realizan una tarea.
+
+### 5. Triggers (Desencadenadores)
+Determinan cuándo se ejecuta un pipeline:
+- **Schedule**: ejecución programada
+- **Tumbling Window**: ventanas de tiempo específicas
+- **Event-based**: basado en eventos (ej: cuando llega un archivo)
+
+## Tu primer Pipeline: Copiar datos de CSV a SQL
+
+Vamos a crear un pipeline simple que copie datos desde un archivo CSV en Azure Blob Storage a una tabla en Azure SQL Database.
+
+### Paso 1: Crear Linked Services
+
+```json
+// Linked Service para Blob Storage
+{
+  "name": "AzureBlobStorageLinkedService",
+  "type": "AzureBlobStorage",
+  "typeProperties": {
+    "connectionString": "DefaultEndpointsProtocol=https;AccountName=mystorageaccount;..."
+  }
+}
+
+// Linked Service para SQL Database
+{
+  "name": "AzureSqlDatabaseLinkedService",
+  "type": "AzureSqlDatabase",
+  "typeProperties": {
+    "connectionString": "Server=tcp:myserver.database.windows.net,1433;Database=mydb;..."
+  }
+}
+```
+
+### Paso 2: Crear Datasets
+
+```json
+// Dataset para el CSV origen
+{
+  "name": "SourceCSVDataset",
+  "properties": {
+    "linkedServiceName": {
+      "referenceName": "AzureBlobStorageLinkedService",
+      "type": "LinkedServiceReference"
+    },
+    "type": "DelimitedText",
+    "typeProperties": {
+      "location": {
+        "type": "AzureBlobStorageLocation",
+        "container": "input",
+        "fileName": "data.csv"
+      },
+      "columnDelimiter": ",",
+      "firstRowAsHeader": true
+    }
+  }
+}
+
+// Dataset para la tabla SQL destino
+{
+  "name": "DestinationSQLDataset",
+  "properties": {
+    "linkedServiceName": {
+      "referenceName": "AzureSqlDatabaseLinkedService",
+      "type": "LinkedServiceReference"
+    },
+    "type": "AzureSqlTable",
+    "typeProperties": {
+      "schema": "dbo",
+      "table": "MyDestinationTable"
+    }
+  }
+}
+```
+
+### Paso 3: Crear el Pipeline con Copy Activity
+
+```json
+{
+  "name": "CopyCSVtoSQLPipeline",
+  "properties": {
+    "activities": [
+      {
+        "name": "CopyData",
+        "type": "Copy",
+        "inputs": [
+          {
+            "referenceName": "SourceCSVDataset",
+            "type": "DatasetReference"
+          }
+        ],
+        "outputs": [
+          {
+            "referenceName": "DestinationSQLDataset",
+            "type": "DatasetReference"
+          }
+        ],
+        "typeProperties": {
+          "source": {
+            "type": "DelimitedTextSource"
+          },
+          "sink": {
+            "type": "SqlSink",
+            "writeBehavior": "insert"
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+## Mejores prácticas
+
+### 1. Seguridad
+- Usa **Azure Key Vault** para almacenar credenciales
+- Implementa **Managed Identity** cuando sea posible
+- Aplica el principio de **mínimo privilegio**
+
+### 2. Monitorización
+- Configura **alertas** para fallos en pipelines
+- Usa **métricas** para optimizar rendimiento
+- Implementa **logging** detallado
+
+### 3. Organización
+- Nombra tus recursos de forma **consistente**
+- Usa **parámetros** para hacer pipelines reutilizables
+- Documenta tus pipelines
+
+### 4. Optimización
+- Usa **particionamiento** para grandes volúmenes de datos
+- Aprovecha el **paralelismo** en Copy Activity
+- Considera usar **Data Flows** para transformaciones complejas
+
+## Costos
+
+Azure Data Factory tiene un modelo de precios basado en:
+- **Orquestación**: número de ejecuciones de actividades
+- **Data Flow**: tiempo de ejecución del clúster
+- **Data Movement**: cantidad de datos movidos
+
+💡 **Tip**: Usa el **Azure Pricing Calculator** para estimar costos antes de implementar.
+
+## Conclusión
+
+Azure Data Factory es una herramienta poderosa para construir pipelines de datos robustos y escalables. En futuros artículos profundizaremos en:
+
+- Data Flows para transformaciones complejas
+- Integración con Azure Databricks
+- Patrones avanzados de orquestación
+- CI/CD para Azure Data Factory
+
+## Recursos adicionales
+
+- [Documentación oficial de Azure Data Factory](https://docs.microsoft.com/azure/data-factory/)
+- [Plantillas de ADF en GitHub](https://github.com/Azure/Azure-DataFactory)
+- [Microsoft Learn - ADF Learning Path](https://docs.microsoft.com/learn/paths/data-integration-scale-azure-data-factory/)
+
+¿Tienes experiencia con Azure Data Factory? ¿Qué patrones o mejores prácticas has implementado? ¡Comparte en los comentarios!
