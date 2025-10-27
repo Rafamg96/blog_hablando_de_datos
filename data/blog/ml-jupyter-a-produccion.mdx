@@ -1,0 +1,472 @@
+---
+title: 'Machine Learning: De Jupyter Notebook a Producción'
+date: '2024-02-01'
+tags: ['machine-learning', 'mlops', 'python', 'producción']
+draft: false
+summary: 'Aprende las mejores prácticas para llevar tus modelos de Machine Learning desde un notebook experimental hasta un sistema en producción robusto y escalable.'
+authors: ['default']
+---
+
+# De Jupyter Notebook a Producción
+
+Uno de los mayores desafíos en Machine Learning no es crear el modelo, sino llevarlo a producción de manera confiable y mantenible. En este artículo veremos cómo hacer esta transición.
+
+## El problema común
+
+Muchos proyectos de ML se quedan atascados en esta situación:
+
+```
+Científico de datos: "¡Mi modelo tiene 95% de precisión!"
+Ingeniero: "Genial, ¿dónde está el código?"
+Científico de datos: "En mi Jupyter Notebook"
+Ingeniero: "😰"
+```
+
+## El camino hacia producción
+
+### 1. Estructura del proyecto
+
+Organiza tu código de manera profesional:
+
+```
+ml-project/
+├── data/
+│   ├── raw/
+│   ├── processed/
+│   └── external/
+├── notebooks/
+│   ├── 01_exploratory_analysis.ipynb
+│   ├── 02_feature_engineering.ipynb
+│   └── 03_model_training.ipynb
+├── src/
+│   ├── __init__.py
+│   ├── data/
+│   │   ├── __init__.py
+│   │   └── preprocessing.py
+│   ├── features/
+│   │   ├── __init__.py
+│   │   └── engineering.py
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── train.py
+│   │   └── predict.py
+│   └── utils/
+│       ├── __init__.py
+│       └── helpers.py
+├── tests/
+│   ├── test_preprocessing.py
+│   ├── test_features.py
+│   └── test_models.py
+├── models/
+│   └── model_v1.pkl
+├── config/
+│   └── config.yaml
+├── requirements.txt
+├── setup.py
+└── README.md
+```
+
+### 2. Refactoriza tu código
+
+Convierte tu notebook en módulos reutilizables:
+
+**Antes (Notebook):**
+```python
+# Celda 1
+import pandas as pd
+df = pd.read_csv('data.csv')
+
+# Celda 2
+df['age_squared'] = df['age'] ** 2
+df['income_log'] = np.log(df['income'])
+
+# Celda 3
+from sklearn.ensemble import RandomForestClassifier
+model = RandomForestClassifier()
+model.fit(X_train, y_train)
+```
+
+**Después (Código modular):**
+
+```python
+# src/data/preprocessing.py
+import pandas as pd
+from typing import Optional
+
+class DataLoader:
+    """Carga y valida datos."""
+    
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+    
+    def load(self) -> pd.DataFrame:
+        """Carga datos desde CSV."""
+        df = pd.read_csv(self.file_path)
+        self._validate(df)
+        return df
+    
+    def _validate(self, df: pd.DataFrame) -> None:
+        """Valida que el DataFrame tenga las columnas necesarias."""
+        required_columns = ['age', 'income', 'target']
+        missing = set(required_columns) - set(df.columns)
+        if missing:
+            raise ValueError(f"Missing columns: {missing}")
+
+# src/features/engineering.py
+import numpy as np
+import pandas as pd
+
+class FeatureEngineer:
+    """Crea features para el modelo."""
+    
+    @staticmethod
+    def create_polynomial_features(df: pd.DataFrame, 
+                                   column: str, 
+                                   degree: int = 2) -> pd.DataFrame:
+        """Crea features polinómicos."""
+        df = df.copy()
+        df[f'{column}_squared'] = df[column] ** degree
+        return df
+    
+    @staticmethod
+    def create_log_features(df: pd.DataFrame, 
+                           column: str) -> pd.DataFrame:
+        """Crea features logarítmicos."""
+        df = df.copy()
+        df[f'{column}_log'] = np.log1p(df[column])
+        return df
+
+# src/models/train.py
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import cross_val_score
+import joblib
+from typing import Dict, Any
+import mlflow
+
+class ModelTrainer:
+    """Entrena y evalúa modelos."""
+    
+    def __init__(self, model_params: Dict[str, Any]):
+        self.model = RandomForestClassifier(**model_params)
+        self.model_params = model_params
+    
+    def train(self, X_train, y_train, X_val, y_val):
+        """Entrena el modelo y registra métricas."""
+        
+        with mlflow.start_run():
+            # Log parámetros
+            mlflow.log_params(self.model_params)
+            
+            # Entrenar
+            self.model.fit(X_train, y_train)
+            
+            # Evaluar
+            train_score = self.model.score(X_train, y_train)
+            val_score = self.model.score(X_val, y_val)
+            
+            # Log métricas
+            mlflow.log_metric("train_accuracy", train_score)
+            mlflow.log_metric("val_accuracy", val_score)
+            
+            # Log modelo
+            mlflow.sklearn.log_model(self.model, "model")
+        
+        return self.model
+    
+    def save(self, path: str):
+        """Guarda el modelo."""
+        joblib.dump(self.model, path)
+```
+
+### 3. Configuración externa
+
+Usa archivos de configuración en lugar de variables hardcodeadas:
+
+```yaml
+# config/config.yaml
+data:
+  train_path: "data/processed/train.csv"
+  test_path: "data/processed/test.csv"
+  
+features:
+  polynomial_degree: 2
+  log_columns: ['income', 'expenses']
+  
+model:
+  n_estimators: 100
+  max_depth: 10
+  random_state: 42
+  
+training:
+  test_size: 0.2
+  cv_folds: 5
+  
+mlflow:
+  tracking_uri: "http://localhost:5000"
+  experiment_name: "customer_churn"
+```
+
+Carga la configuración:
+
+```python
+# src/utils/config.py
+import yaml
+from typing import Dict, Any
+
+def load_config(config_path: str) -> Dict[str, Any]:
+    """Carga configuración desde YAML."""
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config
+```
+
+### 4. Tests automatizados
+
+Escribe tests para tu código:
+
+```python
+# tests/test_features.py
+import pytest
+import pandas as pd
+from src.features.engineering import FeatureEngineer
+
+def test_polynomial_features():
+    """Test creación de features polinómicos."""
+    df = pd.DataFrame({'age': [25, 30, 35]})
+    fe = FeatureEngineer()
+    result = fe.create_polynomial_features(df, 'age', degree=2)
+    
+    assert 'age_squared' in result.columns
+    assert result['age_squared'].tolist() == [625, 900, 1225]
+
+def test_log_features():
+    """Test creación de features logarítmicos."""
+    df = pd.DataFrame({'income': [1000, 2000, 3000]})
+    fe = FeatureEngineer()
+    result = fe.create_log_features(df, 'income')
+    
+    assert 'income_log' in result.columns
+    assert all(result['income_log'] > 0)
+
+def test_handle_missing_values():
+    """Test manejo de valores faltantes."""
+    df = pd.DataFrame({'income': [1000, None, 3000]})
+    fe = FeatureEngineer()
+    
+    with pytest.raises(ValueError):
+        fe.create_log_features(df, 'income')
+```
+
+### 5. Pipeline de ML
+
+Crea un pipeline completo:
+
+```python
+# src/pipeline.py
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+
+def create_preprocessing_pipeline(numeric_features, categorical_features):
+    """Crea pipeline de preprocessing."""
+    
+    numeric_transformer = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy='median')),
+        ('scaler', StandardScaler())
+    ])
+    
+    categorical_transformer = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
+        ('onehot', OneHotEncoder(handle_unknown='ignore'))
+    ])
+    
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('num', numeric_transformer, numeric_features),
+            ('cat', categorical_transformer, categorical_features)
+        ])
+    
+    return preprocessor
+
+def create_ml_pipeline(preprocessor, model):
+    """Crea pipeline completo de ML."""
+    
+    pipeline = Pipeline(steps=[
+        ('preprocessor', preprocessor),
+        ('classifier', model)
+    ])
+    
+    return pipeline
+```
+
+### 6. API para servir el modelo
+
+Crea una API con FastAPI:
+
+```python
+# api/main.py
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import joblib
+import pandas as pd
+from typing import List
+
+app = FastAPI(title="ML Model API")
+
+# Cargar modelo al iniciar
+model = joblib.load('models/model_v1.pkl')
+
+class PredictionInput(BaseModel):
+    age: int
+    income: float
+    expenses: float
+    
+class PredictionOutput(BaseModel):
+    prediction: int
+    probability: float
+
+@app.post("/predict", response_model=PredictionOutput)
+async def predict(input_data: PredictionInput):
+    """Endpoint para realizar predicciones."""
+    try:
+        # Convertir a DataFrame
+        df = pd.DataFrame([input_data.dict()])
+        
+        # Predecir
+        prediction = model.predict(df)[0]
+        probability = model.predict_proba(df)[0].max()
+        
+        return PredictionOutput(
+            prediction=int(prediction),
+            probability=float(probability)
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy"}
+```
+
+### 7. Dockerización
+
+```dockerfile
+# Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+EXPOSE 8000
+
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  ml-api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_PATH=/app/models/model_v1.pkl
+    volumes:
+      - ./models:/app/models
+```
+
+### 8. Monitorización
+
+Implementa logging y monitorización:
+
+```python
+# src/monitoring/logger.py
+import logging
+from datetime import datetime
+
+def setup_logger(name: str) -> logging.Logger:
+    """Configura logger."""
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    
+    handler = logging.FileHandler(
+        f'logs/{name}_{datetime.now():%Y%m%d}.log'
+    )
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    
+    return logger
+
+# En tu API
+from src.monitoring.logger import setup_logger
+
+logger = setup_logger('ml_api')
+
+@app.post("/predict")
+async def predict(input_data: PredictionInput):
+    logger.info(f"Prediction request: {input_data}")
+    
+    try:
+        prediction = model.predict(df)[0]
+        logger.info(f"Prediction result: {prediction}")
+        return {"prediction": int(prediction)}
+    except Exception as e:
+        logger.error(f"Prediction error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+```
+
+## Mejores prácticas MLOps
+
+### 1. Versionado
+- ✅ Versiona tu código (Git)
+- ✅ Versiona tus datos (DVC, Delta Lake)
+- ✅ Versiona tus modelos (MLflow, Weights & Biases)
+
+### 2. Reproducibilidad
+- ✅ Fija las versiones de dependencias
+- ✅ Usa seeds aleatorios
+- ✅ Documenta el proceso
+
+### 3. Validación
+- ✅ Valida datos de entrada
+- ✅ Monitorea data drift
+- ✅ Implementa tests A/B
+
+### 4. Escalabilidad
+- ✅ Usa caching inteligente
+- ✅ Implementa batch prediction cuando sea apropiado
+- ✅ Considera modelo serving con TensorFlow Serving o Triton
+
+## Conclusión
+
+Llevar un modelo a producción requiere mucho más que un buen accuracy. Necesitas:
+- Código limpio y modular
+- Tests automatizados
+- Pipeline robusto
+- API bien diseñada
+- Monitorización continua
+
+En próximos artículos profundizaremos en:
+- Feature stores
+- Model registry
+- A/B testing
+- Model retraining automático
+
+## Recursos
+
+- [MLOps Principles](https://ml-ops.org/)
+- [Made With ML](https://madewithml.com/)
+- [Full Stack Deep Learning](https://fullstackdeeplearning.com/)
+
+¿Qué desafíos has enfrentado llevando modelos a producción? ¡Comparte tu experiencia!

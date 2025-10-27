@@ -1,0 +1,325 @@
+---
+title: 'DevOps: Implementando CI/CD con GitHub Actions'
+date: '2024-01-25'
+tags: ['devops', 'ci-cd', 'github-actions', 'automatización']
+draft: false
+summary: 'Aprende a automatizar tus despliegues y mejorar tu flujo de trabajo con GitHub Actions. Guía práctica para implementar CI/CD.'
+authors: ['default']
+---
+
+# Implementando CI/CD con GitHub Actions
+
+En el mundo del desarrollo moderno, la automatización es clave para entregar software de calidad de manera rápida y confiable. GitHub Actions es una de las herramientas más populares para implementar CI/CD.
+
+## ¿Qué es CI/CD?
+
+**CI/CD** son las siglas de Continuous Integration (Integración Continua) y Continuous Deployment/Delivery (Despliegue/Entrega Continua).
+
+### Continuous Integration (CI)
+- Integración automática de cambios de código
+- Ejecución de pruebas automatizadas
+- Validación de calidad de código
+- Detección temprana de errores
+
+### Continuous Deployment (CD)
+- Despliegue automático a producción
+- Reducción de errores humanos
+- Entregas más frecuentes y confiables
+- Rollback rápido en caso de problemas
+
+## ¿Por qué GitHub Actions?
+
+GitHub Actions ofrece ventajas significativas:
+
+✅ **Integración nativa** con GitHub
+✅ **Gratuito** para repositorios públicos
+✅ **Miles de actions** disponibles en el marketplace
+✅ **Sintaxis simple** basada en YAML
+✅ **Ejecución en múltiples sistemas operativos**
+
+## Conceptos básicos
+
+### Workflows
+Procesos automatizados que defines en tu repositorio (`.github/workflows/`)
+
+### Events
+Eventos que disparan workflows (push, pull_request, schedule, etc.)
+
+### Jobs
+Conjunto de steps que se ejecutan en el mismo runner
+
+### Steps
+Tareas individuales que ejecutan comandos o actions
+
+### Actions
+Aplicaciones reutilizables para realizar tareas comunes
+
+### Runners
+Servidores que ejecutan tus workflows
+
+## Tu primer workflow: Node.js CI
+
+Vamos a crear un workflow que:
+1. Ejecute tests en cada push
+2. Verifique el linting
+3. Construya la aplicación
+
+```yaml
+name: Node.js CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run linter
+      run: npm run lint
+      
+    - name: Run tests
+      run: npm test
+      
+    - name: Build
+      run: npm run build
+```
+
+## Workflow avanzado: Deploy a Azure
+
+Ahora un ejemplo más complejo que despliega a Azure Web App:
+
+```yaml
+name: Deploy to Azure
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  AZURE_WEBAPP_NAME: my-app-name
+  NODE_VERSION: '20.x'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run tests
+      run: npm test
+    
+    - name: Build application
+      run: npm run build
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: node-app
+        path: .
+    
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: Deploy to Azure Web App
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: ${{ env.AZURE_WEBAPP_NAME }}
+        package: .
+```
+
+## Gestión de Secrets
+
+Los secrets son valores sensibles que no deben estar en el código:
+
+1. Ve a **Settings** → **Secrets and variables** → **Actions**
+2. Click en **New repository secret**
+3. Agrega tus secrets (API keys, credentials, etc.)
+
+Uso en workflows:
+```yaml
+steps:
+  - name: Use secret
+    env:
+      API_KEY: ${{ secrets.MY_API_KEY }}
+    run: echo "Using API key"
+```
+
+## Matriz de estrategias
+
+Ejecuta jobs en múltiples configuraciones:
+
+```yaml
+strategy:
+  matrix:
+    os: [ubuntu-latest, windows-latest, macos-latest]
+    node-version: [18.x, 20.x]
+    
+runs-on: ${{ matrix.os }}
+```
+
+## Condicionales
+
+Ejecuta steps basándote en condiciones:
+
+```yaml
+- name: Deploy to production
+  if: github.ref == 'refs/heads/main'
+  run: npm run deploy
+```
+
+## Reusabilidad con Actions compuestas
+
+Crea tus propias actions reutilizables:
+
+```yaml
+# .github/actions/setup-project/action.yml
+name: 'Setup Project'
+description: 'Setup Node.js and install dependencies'
+
+inputs:
+  node-version:
+    description: 'Node.js version'
+    required: true
+    default: '20.x'
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'npm'
+    
+    - run: npm ci
+      shell: bash
+```
+
+Uso:
+```yaml
+- uses: ./.github/actions/setup-project
+  with:
+    node-version: '20.x'
+```
+
+## Mejores prácticas
+
+### 1. Seguridad
+- ✅ Usa secrets para información sensible
+- ✅ Pin actions a versiones específicas o SHA
+- ✅ Limita permisos con `permissions:`
+- ✅ No hagas echo de secrets
+
+### 2. Rendimiento
+- ✅ Usa caché para dependencias
+- ✅ Ejecuta jobs en paralelo cuando sea posible
+- ✅ Usa artifacts para compartir datos entre jobs
+- ✅ Evita steps innecesarios con condicionales
+
+### 3. Mantenibilidad
+- ✅ Nombra jobs y steps descriptivamente
+- ✅ Usa variables de entorno
+- ✅ Reutiliza workflows con composite actions
+- ✅ Documenta workflows complejos
+
+### 4. Monitorización
+- ✅ Configura notificaciones de fallos
+- ✅ Usa status badges en README
+- ✅ Revisa regularmente el tiempo de ejecución
+
+## Debugging
+
+Si un workflow falla:
+
+1. **Revisa los logs** en la pestaña Actions
+2. **Usa `act`** para probar workflows localmente
+3. **Agrega debug logging**:
+```yaml
+- name: Debug
+  run: |
+    echo "Event: ${{ github.event_name }}"
+    echo "Ref: ${{ github.ref }}"
+    echo "SHA: ${{ github.sha }}"
+```
+
+4. **Habilita debug mode** con secrets:
+   - `ACTIONS_STEP_DEBUG: true`
+   - `ACTIONS_RUNNER_DEBUG: true`
+
+## Integraciones útiles
+
+### Code coverage con Codecov
+```yaml
+- name: Upload coverage
+  uses: codecov/codecov-action@v3
+  with:
+    token: ${{ secrets.CODECOV_TOKEN }}
+```
+
+### Docker build y push
+```yaml
+- name: Build and push Docker image
+  uses: docker/build-push-action@v5
+  with:
+    push: true
+    tags: user/app:latest
+```
+
+### Notificaciones Slack
+```yaml
+- name: Slack Notification
+  uses: 8398a7/action-slack@v3
+  with:
+    status: ${{ job.status }}
+    webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+```
+
+## Conclusión
+
+GitHub Actions es una herramienta poderosa que puede transformar tu flujo de trabajo de desarrollo. Empieza simple y ve agregando complejidad según tus necesidades.
+
+En próximos artículos exploraremos:
+- Workflows avanzados para microservicios
+- GitOps con ArgoCD
+- Testing en múltiples entornos
+- Estrategias de deployment (blue-green, canary)
+
+## Recursos adicionales
+
+- [Documentación oficial de GitHub Actions](https://docs.github.com/actions)
+- [GitHub Actions Marketplace](https://github.com/marketplace?type=actions)
+- [Awesome GitHub Actions](https://github.com/sdras/awesome-actions)
+
+¿Qué herramienta de CI/CD usas? ¿Has migrado a GitHub Actions? ¡Cuéntame tu experiencia!
